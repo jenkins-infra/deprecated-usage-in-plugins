@@ -44,15 +44,12 @@ public class DeprecatedApi {
     }
 
     public void analyze(File coreFile) throws IOException {
-        final WarReader warReader = new WarReader(coreFile, false);
-        try {
+        try (WarReader warReader = new WarReader(coreFile, false)) {
             String fileName = warReader.nextClass();
             while (fileName != null) {
                 analyze(warReader.getInputStream());
                 fileName = warReader.nextClass();
             }
-        } finally {
-            warReader.close();
         }
         classes.removeAll(IGNORED_DEPRECATED_CLASSES);
     }
@@ -61,6 +58,10 @@ public class DeprecatedApi {
         final ClassReader classReader = new ClassReader(input);
         classReader.accept(classVisitor,
                 ClassReader.SKIP_CODE | ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
+    }
+
+    public boolean hasDeprecatedApis() {
+        return !classes.isEmpty() || !methods.isEmpty() || !fields.isEmpty();
     }
 
     public Set<String> getClasses() {

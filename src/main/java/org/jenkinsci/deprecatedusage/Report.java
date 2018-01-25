@@ -6,7 +6,6 @@ import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.Writer;
-import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
@@ -15,12 +14,14 @@ public abstract class Report {
     protected final List<DeprecatedUsage> usages;
     protected final File outputDir;
     protected final String reportName;
+    protected final JavadocUtil javadocUtil;
 
-    public Report(DeprecatedApi api, List<DeprecatedUsage> usages, File outputDir, String reportName) {
+    public Report(DeprecatedApi api, List<DeprecatedUsage> usages, File outputDir, String reportName, JavadocUtil javadocUtil) {
         this.api = api;
         this.usages = usages;
         this.outputDir = outputDir;
         this.reportName = reportName;
+        this.javadocUtil = javadocUtil;
     }
 
     protected abstract void generateHtmlReport(Writer writer) throws IOException;

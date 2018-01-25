@@ -9,13 +9,31 @@ import java.util.regex.Pattern;
 
 public class JavadocUtil {
 
-    private static final String JAVADOC_URL = "http://javadoc.jenkins.io/";
+    private static final String CORE_JAVADOC_URL = "http://javadoc.jenkins.io/";
+    // from https://docs.oracle.com/javase/specs/jvms/se8/html/jvms-4.html#jvms-4.3.2
+    // and  https://docs.oracle.com/javase/specs/jvms/se8/html/jvms-4.html#jvms-4.3.3
+    private static final String MARKER_PATTERN = "[LBCDFIJSZV\\[]";
 
-    public static String signatureToJenkinsdocLink(String fullSignature) {
+    public static final JavadocUtil CORE = new JavadocUtil(CORE_JAVADOC_URL, true);
+    public static final JavadocUtil PLUGINS = new JavadocUtil(null, false);
+
+    private final String url;
+    private final boolean includeLinks;
+
+    private JavadocUtil(String url, boolean includeLinks) {
+        this.url = url;
+        this.includeLinks = includeLinks;
+    }
+
+    public String signatureToJenkinsdocLink(String fullSignature) {
         return signatureToJenkinsdocLink(fullSignature, fullSignature);
     }
 
-    public static String signatureToJenkinsdocLink(String fullSignature, String label) {
+    String signatureToJenkinsdocLink(String fullSignature, String label) {
+        if (!includeLinks) {
+            return label;
+        }
+
         String url = signatureToJenkinsdocUrl(fullSignature);
 
         label = label.replace("<", "&lt;").replace(">", "&gt;");
@@ -27,18 +45,18 @@ public class JavadocUtil {
         return "<a href='" + url+ "'>" + label + "</a>";
     }
 
-    public static String signatureToJenkinsdocUrl(String fullSignature) {
+    public String signatureToJenkinsdocUrl(String fullSignature) {
 
         boolean isClass = !fullSignature.contains("#");
         boolean isField = !isClass && !fullSignature.contains("(");
 
         if (isClass) {
             // transform package and class names, then return
-            return JAVADOC_URL + fullSignature.replace("$", ".") + ".html";
+            return CORE_JAVADOC_URL + fullSignature.replace("$", ".") + ".html";
         }
 
         if (isField) {
-            return JAVADOC_URL + fullSignature.replace("$", ".").replace("#", ".html#");
+            return CORE_JAVADOC_URL + fullSignature.replace("$", ".").replace("#", ".html#");
         }
 
         String packageName = "";
@@ -56,42 +74,37 @@ public class JavadocUtil {
 
         String className = classMethodAndArguments.substring(0, classMethodAndArguments.indexOf("#"));
         className = className.replace("$", ".");
-        String methodName = classMethodAndArguments.substring(classMethodAndArguments.indexOf("#") + 1, classMethodAndArguments.indexOf("(")).replace("<init>", className);
+        String lastPartOfClassName = className;
+        int startOfLastPartOfClassName = className.lastIndexOf('.');
+        if (startOfLastPartOfClassName > 0) {
+            lastPartOfClassName = className.substring(startOfLastPartOfClassName + 1);
+        }
+        String methodName = classMethodAndArguments.substring(classMethodAndArguments.indexOf("#") + 1, classMethodAndArguments.indexOf("(")).replace("<init>", lastPartOfClassName);
         String arguments = classMethodAndArguments.substring(classMethodAndArguments.indexOf("(") + 1, classMethodAndArguments.indexOf(")"));
 
         List<String> processedArgs = new ArrayList<>();
         if (arguments.length() > 0) {
             Scanner scanner = new Scanner(arguments);
-            String markerPattern = "[LZBCIV\\[]";
-            while (scanner.hasNext(markerPattern)) {
+            while (scanner.hasNext(MARKER_PATTERN)) {
                 processedArgs.add(scanParameterToHuman(scanner));
             }
-            arguments = StringUtils.join(processedArgs.toArray(), ",%20");
+            arguments = StringUtils.join(processedArgs.toArray(), "-");
         }
 
-        return JAVADOC_URL + packageName + '/' + className + ".html#" + methodName + "%28" + arguments + "%29";
+        return CORE_JAVADOC_URL + packageName + '/' + className + ".html#" + methodName + "-" + arguments + "-";
     }
 
     private static String scanParameterToHuman(Scanner scanner) {
-        String markerPattern = "[LZBCIV\\[]";
-        
-        String marker = scanner.next(markerPattern);
+
+        String marker = scanner.next(MARKER_PATTERN);
         if (marker.equals("[")) {
             // array
-            return scanParameterToHuman(scanner) + "[]";
+            return scanParameterToHuman(scanner) + ":A";
         }
 
         if (marker.equals("L")) {
             String className = scanner.next("[^;]+;");
             return className.substring(0, className.length() - 1).replace("$", ".").replace("/", ".");
-        }
-
-        if (marker.equals("Z")) {
-            return "boolean";
-        }
-
-        if (marker.equals("I")) {
-            return "int";
         }
 
         if (marker.equals("B")) {
@@ -100,6 +113,30 @@ public class JavadocUtil {
 
         if (marker.equals("C")) {
             return "char";
+        }
+
+        if (marker.equals("D")) {
+            return "double";
+        }
+
+        if (marker.equals("F")) {
+            return "float";
+        }
+
+        if (marker.equals("I")) {
+            return "int";
+        }
+
+        if (marker.equals("J")) {
+            return "long";
+        }
+
+        if (marker.equals("S")) {
+            return "short";
+        }
+
+        if (marker.equals("Z")) {
+            return "boolean";
         }
 
         return marker;

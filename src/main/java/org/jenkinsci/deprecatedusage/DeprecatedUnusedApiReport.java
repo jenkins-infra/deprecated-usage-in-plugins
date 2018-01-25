@@ -10,8 +10,10 @@ import java.util.SortedSet;
 import java.util.TreeSet;
 
 public class DeprecatedUnusedApiReport extends Report {
-    public DeprecatedUnusedApiReport(DeprecatedApi api, List<DeprecatedUsage> usages, File outputDir, String reportName) {
-        super(api, usages, outputDir, reportName);
+    private final boolean onlyRelevantSignatures;
+    public DeprecatedUnusedApiReport(DeprecatedApi api, List<DeprecatedUsage> usages, File outputDir, String reportName, JavadocUtil javadocUtil, boolean onlyRelevantSignatures) {
+        super(api, usages, outputDir, reportName, javadocUtil);
+        this.onlyRelevantSignatures = onlyRelevantSignatures;
     }
 
     protected void generateHtmlReport(Writer writer) throws IOException {
@@ -29,7 +31,7 @@ public class DeprecatedUnusedApiReport extends Report {
                         continue CLASSES;
                     }
                 }
-                writer.append("<li>" + JavadocUtil.signatureToJenkinsdocLink(deprecatedClass) + "</li>\n");
+                writer.append("<li>").append(javadocUtil.signatureToJenkinsdocLink(deprecatedClass)).append("</li>\n");
             }
             writer.append("</div>");
         }
@@ -46,7 +48,7 @@ public class DeprecatedUnusedApiReport extends Report {
                         continue FIELDS;
                     }
                 }
-                writer.append("<li>" + JavadocUtil.signatureToJenkinsdocLink(deprecatedField) + "</li>\n");
+                writer.append("<li>").append(javadocUtil.signatureToJenkinsdocLink(deprecatedField)).append("</li>\n");
             }
             writer.append("</div>");
         }
@@ -63,7 +65,7 @@ public class DeprecatedUnusedApiReport extends Report {
                         continue METHODS;
                     }
                 }
-                writer.append("<li>" + JavadocUtil.signatureToJenkinsdocLink(deprecatedMethod) + "</li>\n");
+                writer.append("<li>").append(javadocUtil.signatureToJenkinsdocLink(deprecatedMethod)).append("</li>\n");
             }
             writer.append("</div>");
         }
@@ -127,6 +129,9 @@ public class DeprecatedUnusedApiReport extends Report {
     }
 
     private boolean isRelevantSignature(String signature) {
+        if (!onlyRelevantSignatures) {
+            return true;
+        }
         if (signature.contains("jenkins")) {
             return true;
         }

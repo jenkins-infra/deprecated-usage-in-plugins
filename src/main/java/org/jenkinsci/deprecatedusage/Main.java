@@ -8,6 +8,8 @@ import java.text.DateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -28,27 +30,60 @@ public class Main {
         updateCenter.download();
         System.out.println("All files are up to date (" + updateCenter.getPlugins().size() + " plugins)");
 
-        System.out.println("Analyzing deprecated api in Jenkins");
-        final File coreFile = updateCenter.getCore().getFile();
+        createReport(updateCenter, new JenkinsCoreAnalysis());
+        final Map<String, Exception> errors = createPluginsReport(updateCenter);
+
+        if (!errors.isEmpty()) {
+            System.out.println();
+            System.out.println("Encountered errors while analyzing plugins");
+            errors.forEach((key, value) -> System.out.println("- " + key + " : " + value));
+            System.out.println();
+        }
+        System.out.println("duration : " + (System.currentTimeMillis() - start) + " ms at "
+                + DateFormat.getDateTimeInstance().format(new Date()));
+    }
+
+    private static Map<String, Exception> createPluginsReport(UpdateCenter updateCenter) {
+        final Map<String, Exception> errors = new TreeMap<>();
+        for(JenkinsFile plugin : updateCenter.getPlugins()) {
+            Analysis analysis = new PluginAnalysis(plugin);
+            if (analysis.getDependentFiles(updateCenter).isEmpty()) {
+                System.out.println("No dependent plugin for " + analysis.getAnalyzedFileName());
+                continue;
+            }
+            try {
+                createReport(updateCenter, analysis);
+            } catch (Exception ex) {
+                errors.put(plugin.getName(), ex);
+            }
+        }
+        return errors;
+    }
+
+    private static void createReport(UpdateCenter updateCenter, Analysis analysis) throws IOException, InterruptedException, ExecutionException {
+        System.out.println("Analyzing deprecated api in " + analysis.getAnalyzedFileName());
+        final File analyzedFile = analysis.getAnalyzedFile(updateCenter).getFile();
         final DeprecatedApi deprecatedApi = new DeprecatedApi();
-        deprecatedApi.analyze(coreFile);
+        deprecatedApi.analyze(analyzedFile);
+        if (analysis.skipIfNoDeprecatedApis() && !deprecatedApi.hasDeprecatedApis()) {
+            System.out.println("No deprecated api found in " + analysis.getAnalyzedFileName());
+            return;
+        }
+        System.out.println("Analyzing deprecated usage in " + analysis.getDependentFilesName());
+        final List<DeprecatedUsage> deprecatedUsages = analyzeDeprecatedUsage(analysis.getDependentFiles(updateCenter), deprecatedApi);
 
-        System.out.println("Analyzing deprecated usage in plugins");
-        final List<DeprecatedUsage> deprecatedUsages = analyzeDeprecatedUsage(updateCenter.getPlugins(), deprecatedApi);
-
+        File outputDir = analysis.getOutputDirectory("output");
+        JavadocUtil javadocUtil = analysis.getJavadocUtil();
         Report[] reports = new Report[] {
-                new DeprecatedUsageByPluginReport(deprecatedApi, deprecatedUsages, new File("output"), "usage-by-plugin"),
-                new DeprecatedUnusedApiReport(deprecatedApi, deprecatedUsages, new File("output"), "deprecated-and-unused"),
-                new DeprecatedUsageByApiReport(deprecatedApi, deprecatedUsages, new File("output"), "usage-by-api")
+                new DeprecatedUsageByPluginReport(deprecatedApi, deprecatedUsages, outputDir, "usage-by-plugin", javadocUtil),
+                new DeprecatedUnusedApiReport(deprecatedApi, deprecatedUsages, outputDir, "deprecated-and-unused", javadocUtil, analysis.areSignatureFiltered()),
+                new DeprecatedUsageByApiReport(deprecatedApi, deprecatedUsages, outputDir, "usage-by-api", javadocUtil)
         };
 
         for (Report report : reports) {
             report.generateJsonReport();
             report.generateHtmlReport();
         }
-
-        System.out.println("duration : " + (System.currentTimeMillis() - start) + " ms at "
-                + DateFormat.getDateTimeInstance().format(new Date()));
     }
 
     private static List<DeprecatedUsage> analyzeDeprecatedUsage(List<JenkinsFile> plugins,
@@ -57,23 +92,20 @@ public class Main {
                 .newFixedThreadPool(Runtime.getRuntime().availableProcessors());
         final List<Future<DeprecatedUsage>> futures = new ArrayList<>(plugins.size());
         for (final JenkinsFile plugin : plugins) {
-            final Callable<DeprecatedUsage> task = new Callable<DeprecatedUsage>() {
-                @Override
-                public DeprecatedUsage call() throws IOException {
-                    final DeprecatedUsage deprecatedUsage = new DeprecatedUsage(plugin.getName(),
-                            plugin.getVersion(), deprecatedApi);
-                    try {
-                        deprecatedUsage.analyze(plugin.getFile());
-                    } catch (final EOFException | ZipException e) {
-                        System.out.println("deleting " + plugin.getFile().getName() + " and skipping, because "
-                                + e.toString());
-                        plugin.getFile().delete();
-                    } catch (final Exception e) {
-                        System.out.println(e.toString() + " on " + plugin.getFile().getName());
-                        e.printStackTrace();
-                    }
-                    return deprecatedUsage;
+            final Callable<DeprecatedUsage> task = () -> {
+                final DeprecatedUsage deprecatedUsage = new DeprecatedUsage(plugin.getName(),
+                        plugin.getVersion(), deprecatedApi);
+                try {
+                    deprecatedUsage.analyze(plugin.getFile());
+                } catch (final EOFException | ZipException e) {
+                    System.out.println("deleting " + plugin.getFile().getName() + " and skipping, because "
+                            + e.toString());
+                    plugin.getFile().delete();
+                } catch (final Exception e) {
+                    System.out.println(e.toString() + " on " + plugin.getFile().getName());
+                    e.printStackTrace();
                 }
+                return deprecatedUsage;
             };
             futures.add(executorService.submit(task));
         }
@@ -96,6 +128,9 @@ public class Main {
         }
         executorService.shutdown();
         executorService.awaitTermination(5, TimeUnit.SECONDS);
+        if (i >= 10) {
+            System.out.println();
+        }
         // wait for threads to stop
         Thread.sleep(100);
         return deprecatedUsages;

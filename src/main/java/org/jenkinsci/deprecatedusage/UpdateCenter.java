@@ -6,13 +6,11 @@ import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.List;
+import java.util.*;
 
 import javax.xml.parsers.ParserConfigurationException;
 
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 import org.xml.sax.SAXException;
@@ -38,13 +36,8 @@ public class UpdateCenter {
             final JenkinsFile plugin = parse(jsonPlugin);
             plugins.add(plugin);
         }
-        final Comparator<JenkinsFile> comparator = new Comparator<JenkinsFile>() {
-            @Override
-            public int compare(JenkinsFile o1, JenkinsFile o2) {
-                return o1.getName().compareToIgnoreCase(o2.getName());
-            }
-        };
-        Collections.sort(plugins, comparator);
+        final Comparator<JenkinsFile> comparator = (o1, o2) -> o1.getName().compareToIgnoreCase(o2.getName());
+        plugins.sort(comparator);
     }
 
     private String getUpdateCenterJson() throws IOException, MalformedURLException {
@@ -61,14 +54,16 @@ public class UpdateCenter {
     }
 
     private JenkinsFile parse(JSONObject jsonObject) throws MalformedURLException, JSONException {
-        final String wiki;
-        if (jsonObject.has("wiki")) {
-            wiki = jsonObject.getString("wiki");
-        } else {
-            wiki = null;
+        final String wiki = jsonObject.optString("wiki");
+        final HashSet<String> dependencies = new HashSet<>();
+        JSONArray jsonDependencies = jsonObject.optJSONArray("dependencies");
+        if (jsonDependencies != null) {
+            for (int i = 0; i < jsonDependencies.length(); i++) {
+                dependencies.add(jsonDependencies.getJSONObject(i).getString("name"));
+            }
         }
         return new JenkinsFile(jsonObject.getString("name"), jsonObject.getString("version"),
-                jsonObject.getString("url"), wiki);
+                jsonObject.getString("url"), wiki, dependencies);
     }
 
     public void download() throws Exception {
